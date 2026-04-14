@@ -32,7 +32,7 @@ jobs:
           MODEL_CONF="make-openwrt/openwrt-files/common-files/etc/model_database.conf"
           cat >> "$MODEL_CONF" << 'CONF'
           [s905l3b]
-          name              = "Amlogic S905L3B (CM311-1 YT/HG680-LC/M401A)"
+          name              = "Amlogic S905L3B (IP103H,TY1608,BV310,B860AV-2.1M)"
           build             = "yes"
           dts               = "meson-gxl-s905l3b"
           soc               = "meson-gxl"
