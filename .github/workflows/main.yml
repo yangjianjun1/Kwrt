@@ -1,0 +1,64 @@
+#=================================================
+# Kwrt 云编译 - S905L3B 专用 (CM311-1 / HG680-LC)
+#=================================================
+name: Build-Kwrt-S905L3B
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/build.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: 初始化编译环境
+        run: |
+          sudo apt update -y
+          sudo apt install -y build-essential clang flex g++ gawk gcc-multilib gettext git libncurses5-dev libssl-dev python3-distutils rsync unzip zlib1g-dev qemu-utils wget curl
+
+      - name: 一键添加 S905L3B 设备
+        run: |
+          cat > add_s905l3b.sh << 'EOF'
+          #!/bin/bash
+          MODEL_CONF="make-openwrt/openwrt-files/common-files/etc/model_database.conf"
+          cat >> "$MODEL_CONF" << 'CONF'
+          [s905l3b]
+          name              = "Amlogic S905L3B (CM311-1 YT/HG680-LC/M401A)"
+          build             = "yes"
+          dts               = "meson-gxl-s905l3b"
+          soc               = "meson-gxl"
+          memsize           = "1024"
+          has_emmc          = "1"
+          has_wifi          = "0"
+          has_bt            = "0"
+          kernel_5.10       = "yes"
+          kernel_5.15       = "yes"
+          kernel_6.1        = "yes"
+          kernel_6.6        = "yes"
+          CONF
+          BOARD_FILE="make-openwrt/boards/arm-common.board"
+          echo "s905l3b" >> "$BOARD_FILE"
+          DTB_FILE="make-openwrt/openwrt-files/common-files/usr/share/armbian/dtb-amlogic.txt"
+          echo "meson-gxl-s905l3b.dtb" >> "$DTB_FILE"
+          EOF
+          chmod +x add_s905l3b.sh
+          ./add_s905l3b.sh
+
+      - name: 开始编译 S905L3B 固件
+        run: |
+          sudo ./make -b s905l3b -k 6.6
+
+      - name: 上传固件
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenWrt-s905l3b
+          path: out/*.img.xz
