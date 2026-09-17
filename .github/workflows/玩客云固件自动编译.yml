@@ -1,51 +1,67 @@
 #=================================================
-# OpenWrt AutoBuild for 玩客云 onecloud
-# Description: 在线自动编译带 ksmbd 的 Kwrt 固件
-# Lisence: MIT
+# Kwrt 玩客云 onecloud 在线编译
+# 基于 P3TERX/Actions-OpenWrt 模板修改
 #=================================================
-name: 玩客云固件自动编译
+name: 玩客云固件编译
 
-on:
+on: 
   # 手动触发（主要方式）
   workflow_dispatch:
     inputs:
+      target:
+        description: '编译设备（默认玩客云 onecloud）'
+        required: true
+        default: 'onecloud'
       ssh:
-        description: 'SSH 连接调试（true/false）'
+        description: 'SSH 调试（true/false）'
         required: false
         default: 'false'
   
-  # 推送代码时自动触发（可选，不需要可以注释掉）
-  # push:
-  #   branches:
-  #     - master
+  # 保留 API 触发（兼容官方方式）
+  repository_dispatch:
 
 env:
   TZ: Asia/Shanghai
-  TARGET: onecloud
+  # 玩客云默认配置
+  DEFAULT_TARGET: onecloud
 
 jobs:
   build:
     runs-on: ubuntu-22.04
     
-    name: 编译玩客云固件
+    name: 编译 ${{ matrix.target }}
     
+    strategy:
+      fail-fast: false
+      matrix:
+        target: 
+          - ${{ github.event.inputs.target || github.event.client_payload.target || 'onecloud' }}
+        
     steps:
     - name: 检出代码
       uses: actions/checkout@main
       with:
           fetch-depth: 0
 
-    - name: 加载配置
+    - name: 加载设备配置
       run: |
-        echo "TARGET=${{ env.TARGET }}"
+        TARGET="${{ matrix.target }}"
+        echo "当前编译设备: $TARGET"
+        echo "TARGET=$TARGET" >> $GITHUB_ENV
+        
+        # 加载通用配置
         source "${{ github.workspace }}/devices/common/settings.ini"
-        if [ -f "devices/${{ env.TARGET }}/settings.ini" ]; then
-          source "${{ github.workspace }}/devices/${{ env.TARGET }}/settings.ini"
+        # 加载设备专属配置（如果存在）
+        if [ -f "devices/$TARGET/settings.ini" ]; then
+          source "${{ github.workspace }}/devices/$TARGET/settings.ini"
         fi
-        echo "REPO_URL=${REPO_URL}" >> $GITHUB_ENV
-        echo "REPO_BRANCH=${REPO_BRANCH}" >> $GITHUB_ENV
-        echo "CONFIG_FILE=${CONFIG_FILE}" >> $GITHUB_ENV
-        echo "DIY_SH=${DIY_SH}" >> $GITHUB_ENV
+        
+        # 关键：写死源码地址和分支，避免变量为空
+        echo "REPO_URL=https://github.com/openwrt/openwrt" >> $GITHUB_ENV
+        echo "REPO_BRANCH=openwrt-25.12" >> $GITHUB_ENV
+        echo "CONFIG_FILE=${CONFIG_FILE:-.config}" >> $GITHUB_ENV
+        echo "DIY_SH=${DIY_SH:-diy.sh}" >> $GITHUB_ENV
+        echo "UPLOAD_FIRMWARE_FOR_ARTIFACT=true" >> $GITHUB_ENV
 
     - name: 释放磁盘空间
       uses: coder-xiaomo/free-disk-space@main
@@ -79,12 +95,15 @@ jobs:
       run: |
         echo "date=$(date +'%m.%d')" >> $GITHUB_ENV
         echo "date2=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
+        echo "VERSION=$(date +'%m.%d')" >> $GITHUB_ENV
 
     - name: 克隆 OpenWrt 源码
       run: |
+        set -x
+        # 直接克隆指定分支，不做复杂判断
         git clone ${{ env.REPO_URL }} -b ${{ env.REPO_BRANCH }} openwrt
 
-    - name: 加载自定义配置
+    - name: 加载自定义配置 + 添加 ksmbd 插件
       run: |
         function git_clone_path() {
           trap 'rm -rf "$tmpdir"' EXIT
@@ -110,34 +129,44 @@ jobs:
           cd $rootdir
           }
         export -f git_clone_path
+        
         mkdir -p openwrt
         cp -rf devices/common/. openwrt/
         cp -rf devices/${{ env.TARGET }}/. openwrt/
         cp -rf devices openwrt/
         cd openwrt
         
-        # ====== 在这里添加你需要的插件 ======
-        echo "添加 ksmbd 文件共享插件..."
-        sed -i 's/PACKAGES="/PACKAGES="ksmbd-server luci-app-ksmbd luci-app-ttyd luci-app-diskman /' devices/${{ env.TARGET }}/diy.sh
-        # ===================================
+        # ====== 玩客云专属：添加 ksmbd 文件共享插件 ======
+        echo "正在添加 ksmbd 插件..."
+        if [ -f "devices/${{ env.TARGET }}/diy.sh" ]; then
+          sed -i 's/PACKAGES="/PACKAGES="ksmbd-server luci-app-ksmbd luci-app-ttyd luci-app-diskman /' devices/${{ env.TARGET }}/diy.sh
+          echo "已添加: ksmbd-server luci-app-ksmbd luci-app-ttyd luci-app-diskman"
+        fi
+        # ==============================================
         
         chmod +x devices/common/${{ env.DIY_SH }}
         /bin/bash "devices/common/${{ env.DIY_SH }}"
         cp -f devices/common/${{ env.CONFIG_FILE }} .config
+        
         if [ -f "devices/${{ env.TARGET }}/${{ env.CONFIG_FILE }}" ]; then
           echo >> .config
           cat devices/${{ env.TARGET }}/${{ env.CONFIG_FILE }} >> .config
         fi
+        
         if [ -f "devices/${{ env.TARGET }}/${{ env.DIY_SH }}" ]; then
           chmod +x devices/${{ env.TARGET }}/${{ env.DIY_SH }}
           /bin/bash "devices/${{ env.TARGET }}/${{ env.DIY_SH }}"
         fi
+        
         cp -Rf ./diy/* ./ || true
 
     - name: 应用补丁
       run: |
         cd openwrt
         cp -rn devices/common/patches devices/${{ env.TARGET }}/ 2>/dev/null || true
+        if [ -n "$(ls -A devices/${{ env.TARGET }}/*.bin.patch 2>/dev/null)" ]; then
+          git apply devices/${{ env.TARGET }}/patches/*.bin.patch
+        fi
         find "devices/${{ env.TARGET }}/patches" -maxdepth 1 -type f -name '*.revert.patch' -print0 | sort -z | xargs -I % -t -0 -n 1 sh -c "patch -d './' -R --no-backup-if-mismatch -p1 -F 1 -i '%'" 2>/dev/null || true
         find "devices/${{ env.TARGET }}/patches" -maxdepth 1 -type f -name '*.patch' ! -name '*.revert.patch' ! -name '*.bin.patch' -print0 | sort -z | xargs -I % -t -0 -n 1 sh -c "patch -d './' --no-backup-if-mismatch -p1 -F 1 -i '%'"
 
@@ -145,10 +174,16 @@ jobs:
       run: |
         cd openwrt
         make defconfig
+        # 玩客云不需要无线驱动，禁用减少编译时间
+        if [[ ! "${{ env.TARGET }}" =~ (amlogic_meson8b|armsr_armv8|bcm27xx_*|rockchip_armv8|sunxi_*|x86_*|siflower_*) ]]; then
+        sed -n '/# Wireless Drivers/,/# end of Wireless Drivers/p' .config | sed -e 's/=m/=n/' >>.config
+        sed -i "s/\(kmod-qca.*\)=m/\1=n/" .config
+        make defconfig
+        fi
 
     - name: SSH 连接调试
       uses: kiddin9/debugger-action@master
-      if: github.event.inputs.ssh == 'true'
+      if: github.event.inputs.ssh == 'true' || contains(github.event.action, 'ssh')
 
     - name: 开始编译固件
       id: compile
@@ -157,6 +192,8 @@ jobs:
         cd openwrt
         echo -e "$(($(nproc)+1)) 线程编译"
         make -j$(($(nproc)+1)) || { log=$(mktemp); make V=s &>$log; tail -100 $log; exit 1; }
+        rm -rf staging_dir/toolchain-*/bin/*openwrt-linux-musl-lto-dump
+        rm -rf staging_dir/toolchain-*/initial
         df -hT
 
     - name: 整理固件文件
@@ -165,20 +202,25 @@ jobs:
       run: |
         cd openwrt/bin/targets/*/*/
         echo "FIRMWARE=$PWD" >> $GITHUB_ENV
-        ls -lh
+        cp $GITHUB_WORKSPACE/openwrt/.config ${{ env.TARGET }}.config || true
+        ls -lh *.img *.img.gz 2>/dev/null || true
 
     - name: 上传固件到 Artifacts
       uses: actions/upload-artifact@main
       with:
-        name: Kwrt_玩客云_${{ env.date2 }}
+        name: Kwrt_${{ env.TARGET }}_${{ env.date2 }}
         path: |
           ${{ env.FIRMWARE }}/*.img
           ${{ env.FIRMWARE }}/*.img.gz
+          ${{ env.FIRMWARE }}/*.config
           openwrt/.config
 
-    - name: 编译完成通知
+    - name: 编译完成
       run: |
+        echo "========================================"
         echo "🎉 玩客云固件编译完成！"
-        echo "固件版本：Kwrt ${{ env.date }}"
-        echo "编译日期：${{ env.date2 }}"
-        echo "下载位置：Actions 页面 -> Artifacts"
+        echo "设备: ${{ env.TARGET }}"
+        echo "版本: Kwrt ${{ env.VERSION }}"
+        echo "日期: ${{ env.date2 }}"
+        echo "下载: 本页面底部 Artifacts 区域"
+        echo "========================================"
