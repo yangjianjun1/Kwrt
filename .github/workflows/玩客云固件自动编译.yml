@@ -11,7 +11,7 @@ on:
       target:
         description: '编译设备（默认玩客云 onecloud）'
         required: true
-        default: 'onecloud'
+        default: 'amlogic_meson8b'
       ssh:
         description: 'SSH 调试（true/false）'
         required: false
@@ -23,7 +23,7 @@ on:
 env:
   TZ: Asia/Shanghai
   # 玩客云默认配置
-  DEFAULT_TARGET: onecloud
+  DEFAULT_TARGET: amlogic_meson8b
 
 jobs:
   build:
@@ -35,7 +35,7 @@ jobs:
       fail-fast: false
       matrix:
         target: 
-          - ${{ github.event.inputs.target || github.event.client_payload.target || 'onecloud' }}
+          - ${{ github.event.inputs.target || github.event.client_payload.target || 'amlogic_meson8b' }}
         
     steps:
     - name: 检出代码
