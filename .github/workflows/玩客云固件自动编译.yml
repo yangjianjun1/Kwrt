@@ -196,14 +196,11 @@ jobs:
         rm -rf staging_dir/toolchain-*/initial
         df -hT
 
-    - name: 制作直刷包
+   - name: 制作直刷包
       run: |
-          if [[ "${{ matrix.brun_type }}" == "amlogic6.12" ]]; then
-            $GITHUB_WORKSPACE/Scripts/convert.sh
-          else
-            $GITHUB_WORKSPACE/Scripts/convert.sh
-          fi
-
+        chmod +x $GITHUB_WORKSPACE/Scripts/convert2.sh
+        $GITHUB_WORKSPACE/Scripts/convert2.sh
+        
     - name: 整理固件文件
       id: organize
       continue-on-error: true
