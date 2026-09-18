@@ -1,6 +1,7 @@
 #=================================================
-# Kwrt 玩客云 onecloud 在线编译
+# Kwrt 玩客云 onecloud 在线编译 + 标准线刷包
 # 基于 P3TERX/Actions-OpenWrt 模板修改
+# 输出：.burn.img.xz（USB Burning Tool 可直接线刷）
 #=================================================
 name: 玩客云固件编译
 
@@ -196,11 +197,11 @@ jobs:
         rm -rf staging_dir/toolchain-*/initial
         df -hT
 
-   - name: 制作直刷包
+    - name: 制作直刷包
       run: |
         chmod +x $GITHUB_WORKSPACE/Scripts/convert2.sh
         $GITHUB_WORKSPACE/Scripts/convert2.sh
-        
+
     - name: 整理固件文件
       id: organize
       continue-on-error: true
@@ -208,24 +209,27 @@ jobs:
         cd openwrt/bin/targets/*/*/
         echo "FIRMWARE=$PWD" >> $GITHUB_ENV
         cp $GITHUB_WORKSPACE/openwrt/.config ${{ env.TARGET }}.config || true
-        ls -lh *.img *.img.gz 2>/dev/null || true
+        echo "===== 最终线刷包列表 ====="
+        ls -lh *.burn.img.xz *.sha 2>/dev/null || true
+        echo "=========================="
 
     - name: 上传固件到 Artifacts
       uses: actions/upload-artifact@main
       with:
-        name: Kwrt_${{ env.TARGET }}_${{ env.date2 }}
+        name: Kwrt_玩客云_线刷包_${{ env.date2 }}
         path: |
-          ${{ env.FIRMWARE }}/*.img
-          ${{ env.FIRMWARE }}/*.img.gz
+          ${{ env.FIRMWARE }}/*.burn.img.xz
+          ${{ env.FIRMWARE }}/*.sha
           ${{ env.FIRMWARE }}/*.config
           openwrt/.config
 
     - name: 编译完成
       run: |
         echo "========================================"
-        echo "🎉 玩客云固件编译完成！"
+        echo "🎉 玩客云固件编译 + 线刷包打包完成！"
         echo "设备: ${{ env.TARGET }}"
         echo "版本: Kwrt ${{ env.VERSION }}"
         echo "日期: ${{ env.date2 }}"
+        echo "固件格式: .burn.img.xz（USB Burning Tool 可直接线刷）"
         echo "下载: 本页面底部 Artifacts 区域"
         echo "========================================"
