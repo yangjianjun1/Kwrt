@@ -140,7 +140,7 @@ jobs:
         # ====== 玩客云专属：添加 ksmbd 文件共享插件 ======
         echo "正在添加 ksmbd 插件..."
         if [ -f "devices/${{ env.TARGET }}/diy.sh" ]; then
-          sed -i 's/PACKAGES="/PACKAGES="ksmbd-server luci-app-ksmbd luci-app-ttyd luci-app-diskman /' devices/${{ env.TARGET }}/diy.sh
+          sed -i 's/PACKAGES="/PACKAGES="ksmbd-server luci-app-ksmbd luci-app-ttyd luci-app-diskman dockerd docker-compose luci-app-docker luci-i18n-docker-zh-cn /' devices/${{ env.TARGET }}/diy.sh
           echo "已添加: ksmbd-server luci-app-ksmbd luci-app-ttyd luci-app-diskman"
         fi
         # ==============================================
